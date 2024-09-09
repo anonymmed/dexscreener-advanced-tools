@@ -53,6 +53,8 @@ window.addEventListener('load', () => {
             document.getElementById('clear-filter').addEventListener('click', clearFilter);
             document.getElementById('create-alert').addEventListener('click', createAlert);
             
+            document.getElementById('check-solana-token').addEventListener('click', checkSolanaToken);
+
             document.getElementById('alert-list').addEventListener('click', function(event) {
                 if (event.target.classList.contains('delete-alert-btn')) {
                     deleteAlert(event.target.dataset.index);
@@ -97,13 +99,13 @@ window.addEventListener('load', () => {
         const symbol = document.getElementById('token-symbol').value || null;
         const publicKey = document.getElementById('token-public-key').value || null;
         const publicKeyError = document.getElementById('public-key-error'); // Error message div
-    // Check if the public key has at least 40 characters
-    if (publicKey && publicKey.length < 26) {
-        publicKeyError.style.display = 'block'; // Show the error message
-        return; // Stop the function if the public key is too short
-    } else {
-        publicKeyError.style.display = 'none'; // Hide the error message if input is valid
-    }
+        // Check if the public key has at least 40 characters
+        if (publicKey && publicKey.length < 26) {
+            publicKeyError.style.display = 'block'; // Show the error message
+            return; // Stop the function if the public key is too short
+        } else {
+            publicKeyError.style.display = 'none'; // Hide the error message if input is valid
+        }
 
         if (symbol || publicKey) {
             displayFilteredResults({
@@ -118,6 +120,74 @@ window.addEventListener('load', () => {
         document.getElementById('token-public-key').value = '';
         document.getElementById('filtered-results').innerHTML = '';
     }
+
+    // Solana Token Checker Function
+    function checkSolanaToken() {
+        const publicKey = document.getElementById('solana-public-key').value.trim();
+        const errorElement = document.getElementById('solana-check-error');
+        const reportContainer = document.getElementById('solana-token-report');
+
+        // Clear previous report and error
+        errorElement.style.display = 'none';
+        reportContainer.innerHTML = '';
+
+        // Validate public key length (44 characters for Solana)
+        if (publicKey.length<33 &&  publicKey.length > 44) {
+            errorElement.style.display = 'block';
+            errorElement.textContent = "Please enter a valid 32 to 44 character Solana public key.";
+            return;
+        }
+
+        // Make API call to RugCheck
+        fetch(`https://api.rugcheck.xyz/v1/tokens/${publicKey}/report`)
+            .then(response => response.json())
+            .then(data => {
+                displaySolanaTokenReport(data);
+            })
+            .catch(error => {
+                console.error('Error fetching Solana token data:', error);
+                reportContainer.innerHTML = `<p>Error fetching data. Please try again.</p>`;
+            });
+    }
+    function displaySolanaTokenReport(data) {
+        const reportContainer = document.getElementById('solana-token-report');
+    
+        if (!data || !data.tokenMeta) {
+            reportContainer.innerHTML = '<br /><p>Token not found.</p>';
+            return;
+        }
+    
+        const { name, symbol, image } = data.fileMeta;
+        const supply = data.token.supply;
+        const risks = data.risks;
+        const topHolders = data.topHolders;
+    
+        // Create the report HTML structure
+        let reportHTML = `
+        <br />
+            <div class="report-header">
+                <img src="${image}" alt="${name} Image" class="token-image">
+                <h3>${name} (${symbol})</h3>
+                <p><strong>Supply:</strong> ${supply}</p>
+            </div>
+            <table class="report-table">
+        `;    
+        // Display risks in a more user-friendly format
+        if (risks.length > 0) {
+            reportHTML += `<h4>Risks:</h4><ul class="risk-list">`;
+            risks.forEach(risk => {
+                let riskLevel = "low-risk"; // Default risk level
+                if (risk.level === "warn") riskLevel = "medium-risk";
+                else if (risk.level === "danger") riskLevel = "high-risk";
+    
+                reportHTML += `<li class="risk-item ${riskLevel}"><strong>${risk.name}:</strong> ${risk.description}</li>`;
+            });
+            reportHTML += `</ul>`;
+        }
+    
+        reportContainer.innerHTML = reportHTML;
+    }
+    
 
     // Use chrome.storage.sync instead of localStorage for persistent storage
     function saveAlertToStorage(alert) {
@@ -162,6 +232,7 @@ window.addEventListener('load', () => {
             startAlertChecking(symbol, alertIndex);
         }
     }
+
     function displayFilteredResults(filterCriteria) {
         const rows = document.querySelectorAll('a.ds-dex-table-row');
         const resultsContainer = document.getElementById("filtered-results");
@@ -221,6 +292,7 @@ window.addEventListener('load', () => {
         // Display the modal if it’s not already visible
         document.getElementById('filter-modal').style.display = 'block';
     }
+
     function showNotification(message, audio = "notification") {
         const notificationArea = document.getElementById('notification-area');
         const notificationText = document.getElementById('notification-text');
@@ -250,7 +322,6 @@ window.addEventListener('load', () => {
             }
         }
     }
-    
 
     // Load saved alerts from chrome.storage.sync
     function loadAlertsFromStorage() {
@@ -281,76 +352,76 @@ window.addEventListener('load', () => {
             });
         });
     }
-// Map to store interval IDs for each alert
-const alertIntervals = {};
-function copyToClipboard(text) {
-    const tempInput = document.createElement('input');
-    tempInput.style.position = 'absolute';
-    tempInput.style.left = '-1000px';
-    tempInput.value = text;
-    document.body.appendChild(tempInput);
-    tempInput.select();
-    document.execCommand('copy');
-    document.body.removeChild(tempInput);
-}
 
+    // Map to store interval IDs for each alert
+    const alertIntervals = {};
+    
+    function copyToClipboard(text) {
+        const tempInput = document.createElement('input');
+        tempInput.style.position = 'absolute';
+        tempInput.style.left = '-1000px';
+        tempInput.value = text;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
+    }
 
-function startAlertChecking(symbol, alertIndex) {
-    const checkInterval = 3000; // 3 seconds
-    const intervalId = setInterval(() => {
-        console.log('looking for token ...', symbol);
-        const rows = document.querySelectorAll('a.ds-dex-table-row');
-        let tokenFound = false;
-        rows.forEach(row => {
-            const symbolElement = row.querySelector('.ds-dex-table-row-base-token-symbol');
-            const publicKeyElement = row.querySelector('.ds-dex-table-row-token-icon');
-            const href = row.href;
-            let tokenPublicKey = '';
-            if (symbolElement && symbolElement.innerText.trim().toLowerCase().includes(symbol.toLowerCase())) {
-                if (publicKeyElement) {
-                    const publicKeyArray = publicKeyElement?.src?.trim()?.split("/");
-                    tokenPublicKey = publicKeyArray[publicKeyArray.length - 1].split('.')[0];
-                    if(tokenPublicKey.length < 26 || tokenPublicKey.length > 50)
-                        tokenPublicKey = null;
+    function startAlertChecking(symbol, alertIndex) {
+        const checkInterval = 3000; // 3 seconds
+        const intervalId = setInterval(() => {
+            console.log('looking for token ...', symbol);
+            const rows = document.querySelectorAll('a.ds-dex-table-row');
+            let tokenFound = false;
+            rows.forEach(row => {
+                const symbolElement = row.querySelector('.ds-dex-table-row-base-token-symbol');
+                const publicKeyElement = row.querySelector('.ds-dex-table-row-token-icon');
+                const href = row.href;
+                let tokenPublicKey = '';
+                if (symbolElement && symbolElement.innerText.trim().toLowerCase().includes(symbol.toLowerCase())) {
+                    if (publicKeyElement) {
+                        const publicKeyArray = publicKeyElement?.src?.trim()?.split("/");
+                        tokenPublicKey = publicKeyArray[publicKeyArray.length - 1].split('.')[0];
+                        if(tokenPublicKey.length < 26 || tokenPublicKey.length > 50)
+                            tokenPublicKey = null;
+                    }
+
+                    // Update the alert item with the found token details
+                    const alertItem = document.getElementById(`alert-${alertIndex}`);
+                    if (alertItem) {
+                        alertItem.innerHTML = `
+                            <span>${symbolElement.innerText.trim()}</span>
+                            ${tokenPublicKey ? tokenPublicKey : 'Token found!'}
+                             <button class="copy-btn" data-text="${tokenPublicKey ? tokenPublicKey : href}">Copy📋</button>
+                            <button class="delete-alert-btn" data-index="${alertIndex}">Delete 🗑️</button>
+                            <br>
+                        `;
+                        if(tokenPublicKey)
+                            document.querySelector('.copy-btn').style.display = 'none';
+                        
+                        alertItem.classList.add('red-striped'); // Change style to red-striped
+
+                        // Attach event listener for copy functionality
+                        const copyBtn = alertItem.querySelector('.copy-btn');
+                        copyBtn.addEventListener('click', (event) => {
+                            const textToCopy = event.target.getAttribute('data-text');
+                            copyToClipboard(textToCopy);
+                            showNotification(`${textToCopy} Copied to clipboard`, 'done');
+                        });
+
+                        showNotification(`Token "${symbol}" has been launched!`);
+                        tokenFound = true;
+                    }
                 }
-
-                // Update the alert item with the found token details
-                const alertItem = document.getElementById(`alert-${alertIndex}`);
-                if (alertItem) {
-                    alertItem.innerHTML = `
-                        <span>${symbolElement.innerText.trim()}</span>
-                        ${tokenPublicKey ? tokenPublicKey : 'Token found!'}
-                         <button class="copy-btn" data-text="${tokenPublicKey ? tokenPublicKey : href}">Copy📋</button>
-                        <button class="delete-alert-btn" data-index="${alertIndex}">Delete 🗑️</button>
-                        <br>
-                    `;
-                    if(tokenPublicKey)
-                        document.querySelector('.copy-btn').style.display = 'none';
-                    
-                    alertItem.classList.add('red-striped'); // Change style to red-striped
-
-                    // Attach event listener for copy functionality
-                    const copyBtn = alertItem.querySelector('.copy-btn');
-                    copyBtn.addEventListener('click', (event) => {
-                        const textToCopy = event.target.getAttribute('data-text');
-                        copyToClipboard(textToCopy);
-                        showNotification(`${textToCopy} Copied to clipboard`, 'done');
-                    });
-
-                    showNotification(`Token "${symbol}" has been launched!`);
-                    tokenFound = true;
-                }
+            });
+            if (tokenFound) {
+                clearInterval(intervalId);
             }
-        });
-        if (tokenFound) {
-            clearInterval(intervalId);
-        }
-    }, checkInterval);
+        }, checkInterval);
 
-    // Store the intervalId for this alertIndex
-    alertIntervals[alertIndex] = intervalId;
-}
-
+        // Store the intervalId for this alertIndex
+        alertIntervals[alertIndex] = intervalId;
+    }
 
     // Call function to create the floating button when the page loads
     createFloatingButton();
