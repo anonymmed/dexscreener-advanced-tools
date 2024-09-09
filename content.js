@@ -23,7 +23,9 @@ window.addEventListener('load', () => {
         createModal();
 
         filterButton.addEventListener("click", function() {
-            document.getElementById('filter-modal').style.display = 'block';
+            const filterModal = document.getElementById('filter-modal');
+            if(filterModal)
+                filterModal.style.display = 'block';
         });
     }
 
@@ -96,7 +98,7 @@ window.addEventListener('load', () => {
         const publicKey = document.getElementById('token-public-key').value || null;
         const publicKeyError = document.getElementById('public-key-error'); // Error message div
     // Check if the public key has at least 40 characters
-    if (publicKey && publicKey.length < 40) {
+    if (publicKey && publicKey.length < 26) {
         publicKeyError.style.display = 'block'; // Show the error message
         return; // Stop the function if the public key is too short
     } else {
@@ -281,6 +283,17 @@ window.addEventListener('load', () => {
     }
 // Map to store interval IDs for each alert
 const alertIntervals = {};
+function copyToClipboard(text) {
+    const tempInput = document.createElement('input');
+    tempInput.style.position = 'absolute';
+    tempInput.style.left = '-1000px';
+    tempInput.value = text;
+    document.body.appendChild(tempInput);
+    tempInput.select();
+    document.execCommand('copy');
+    document.body.removeChild(tempInput);
+}
+
 
 function startAlertChecking(symbol, alertIndex) {
     const checkInterval = 3000; // 3 seconds
@@ -291,11 +304,14 @@ function startAlertChecking(symbol, alertIndex) {
         rows.forEach(row => {
             const symbolElement = row.querySelector('.ds-dex-table-row-base-token-symbol');
             const publicKeyElement = row.querySelector('.ds-dex-table-row-token-icon');
+            const href = row.href;
             let tokenPublicKey = '';
             if (symbolElement && symbolElement.innerText.trim().toLowerCase().includes(symbol.toLowerCase())) {
                 if (publicKeyElement) {
                     const publicKeyArray = publicKeyElement?.src?.trim()?.split("/");
                     tokenPublicKey = publicKeyArray[publicKeyArray.length - 1].split('.')[0];
+                    if(tokenPublicKey.length < 26 || tokenPublicKey.length > 50)
+                        tokenPublicKey = null;
                 }
 
                 // Update the alert item with the found token details
@@ -303,11 +319,14 @@ function startAlertChecking(symbol, alertIndex) {
                 if (alertItem) {
                     alertItem.innerHTML = `
                         <span>${symbolElement.innerText.trim()}</span>
-                        ${tokenPublicKey ? tokenPublicKey : 'does not exist'}
-                         <button class="copy-btn" data-text="${tokenPublicKey !== '' ? tokenPublicKey : symbolElement.innerText.trim()}">Copy📋</button>
+                        ${tokenPublicKey ? tokenPublicKey : 'Token found!'}
+                         <button class="copy-btn" data-text="${tokenPublicKey ? tokenPublicKey : href}">Copy📋</button>
                         <button class="delete-alert-btn" data-index="${alertIndex}">Delete 🗑️</button>
                         <br>
                     `;
+                    if(tokenPublicKey)
+                        document.querySelector('.copy-btn').style.display = 'none';
+                    
                     alertItem.classList.add('red-striped'); // Change style to red-striped
 
                     // Attach event listener for copy functionality
