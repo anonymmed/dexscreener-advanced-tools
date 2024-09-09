@@ -94,6 +94,14 @@ window.addEventListener('load', () => {
     function applyFilter() {
         const symbol = document.getElementById('token-symbol').value || null;
         const publicKey = document.getElementById('token-public-key').value || null;
+        const publicKeyError = document.getElementById('public-key-error'); // Error message div
+    // Check if the public key has at least 40 characters
+    if (publicKey && publicKey.length < 40) {
+        publicKeyError.style.display = 'block'; // Show the error message
+        return; // Stop the function if the public key is too short
+    } else {
+        publicKeyError.style.display = 'none'; // Hide the error message if input is valid
+    }
 
         if (symbol || publicKey) {
             displayFilteredResults({
@@ -122,6 +130,16 @@ window.addEventListener('load', () => {
 
     function createAlert() {
         const symbol = document.getElementById('alert-symbol').value;            
+        const alertError = document.getElementById('alert-error');
+
+        // Check if the symbol has at least 3 characters
+        if (symbol.length < 3) {
+            alertError.style.display = 'block'; // Show the error message
+            return; // Stop the function if the symbol is too short
+        } else {
+            alertError.style.display = 'none'; // Hide the error message if input is valid
+        }
+
         if (symbol) {
             const alertList = document.getElementById('alert-list');
             alertIndex++;

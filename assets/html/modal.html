@@ -17,8 +17,9 @@
                 Token Symbol: 
                 <input class="modal-input" type="text" id="token-symbol">
             </label>
+            <div id="public-key-error" class="alert-message" style="display: none;">Token address must be at least 40 characters long.</div>
             <label class="modal-label">
-                Token Public Key: 
+                Token Address: 
                 <input class="modal-input" type="text" id="token-public-key">
             </label>
             <button class="modal-btn" id="apply-filter">Apply Filter</button>
@@ -31,9 +32,10 @@
                 Token Name or Address: 
                 <input class="modal-input" minlength="3" type="text" id="alert-symbol">
             </label>
+            <div id="alert-error" class="alert-message" style="display: none;">The token symbol must have at least 3 characters.</div> <!-- Error message -->
             <button class="modal-btn" id="create-alert">Create Alert</button>
             <div id="alert-list" class="alert-list"></div>
-        </div>
+        </div>        
     </div>
 </div>
 
