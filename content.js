@@ -79,6 +79,9 @@ window.addEventListener('load', () => {
                 }
             });
 
+            // Load existing alerts from storage
+            loadAlertsFromStorage();
+
         })
         .catch(error => {
             console.error('Error loading modal:', error);
@@ -105,14 +108,20 @@ window.addEventListener('load', () => {
         document.getElementById('token-public-key').value = '';
         document.getElementById('filtered-results').innerHTML = '';
     }
-    function saveAlertToLocalStorage(alert) {
-        let alerts = JSON.parse(localStorage.getItem('alerts')) || [];
-        alerts.push(alert);
-        localStorage.setItem('alerts', JSON.stringify(alerts));
+
+    // Use chrome.storage.sync instead of localStorage for persistent storage
+    function saveAlertToStorage(alert) {
+        chrome.storage.sync.get({ alerts: [] }, function(result) {
+            const alerts = result.alerts;
+            alerts.push(alert);
+            chrome.storage.sync.set({ alerts }, function() {
+                console.log('Alert saved to storage:', alert);
+            });
+        });
     }
-    
+
     function createAlert() {
-        const symbol = document.getElementById('alert-symbol').value;
+        const symbol = document.getElementById('alert-symbol').value;            
         if (symbol) {
             const alertList = document.getElementById('alert-list');
             alertIndex++;
@@ -126,22 +135,13 @@ window.addEventListener('load', () => {
             `;
             alertList.appendChild(alertItem);
             document.getElementById('alert-symbol').value = ''; // Clear input after adding alert
-            // Start checking for the alert token every 3 seconds
             
-            //setting localstrage alerts
-            saveAlertToLocalStorage({ "sym": symbol })
+            // Save alert to chrome storage
+            saveAlertToStorage({ symbol, alertIndex });
+
             startAlertChecking(symbol, alertIndex);
         }
     }
-
-    function deleteAlert(index) {
-        const alertList = document.getElementById('alert-list');
-        const alertItem = document.getElementById(`alert-${index}`);
-        if (alertItem) {
-            alertItem.remove();
-        }
-    }
-
     function displayFilteredResults(filterCriteria) {
         const rows = document.querySelectorAll('a.ds-dex-table-row');
         const resultsContainer = document.getElementById("filtered-results");
@@ -201,7 +201,6 @@ window.addEventListener('load', () => {
         // Display the modal if it’s not already visible
         document.getElementById('filter-modal').style.display = 'block';
     }
-    
     function showNotification(message, audio = "notification") {
         const notificationArea = document.getElementById('notification-area');
         const notificationText = document.getElementById('notification-text');
@@ -210,74 +209,111 @@ window.addEventListener('load', () => {
         notificationText.textContent = message;
         notificationArea.style.display = 'block';
         notificationArea.classList.add('show');
-        notificationSound.play();
+        notificationSound.play().then().catch((err) => {});
         setTimeout(() => {
             notificationArea.style.display = 'none';
             notificationArea.classList.remove('show');
         }, 5000); // Hide notification after 5 seconds
     }
-    function copyToClipboard(text) {
-        const tempInput = document.createElement('input');
-        tempInput.style.position = 'absolute';
-        tempInput.style.left = '-1000px';
-        tempInput.value = text;
-        document.body.appendChild(tempInput);
-        tempInput.select();
-        document.execCommand('copy');
-        document.body.removeChild(tempInput);
+
+    function deleteAlert(index) {
+        const alertItem = document.getElementById(`alert-${index}`);
+        if (alertItem) {
+            alertItem.remove();
+            // Remove from storage
+            removeAlertFromStorage(index);
+    
+            // Clear the interval for this alert to stop the search
+            if (alertIntervals[index]) {
+                clearInterval(alertIntervals[index]);
+                delete alertIntervals[index]; // Remove the interval reference
+            }
+        }
     }
     
-    function startAlertChecking(symbol, alertIndex) {
-        const checkInterval = 3000; // 3 seconds
-        const intervalId = setInterval(() => {
-            console.log('looking for token ...', symbol);
-            const rows = document.querySelectorAll('a.ds-dex-table-row');
-            let tokenFound = false;
-            rows.forEach(row => {
-                const symbolElement = row.querySelector('.ds-dex-table-row-base-token-symbol');
-                const publicKeyElement = row.querySelector('.ds-dex-table-row-token-icon');
-                const nameElement = row.querySelector(".ds-dex-table-row-base-token-name");
-                const href = row.href; // Get the href attribute of the link
-                const age = row.querySelector(".ds-dex-table-row-col-pair-age");
-                let tokenPublicKey = '';
-                if (symbolElement  && symbolElement.innerText.trim().toLowerCase().includes(symbol.toLowerCase())) {
-                    if(publicKeyElement) {
-                        const publicKeyArray = publicKeyElement?.src?.trim()?.split("/");
-                        tokenPublicKey = publicKeyArray[publicKeyArray.length -1].split('.')[0];    
-                    }
 
-                    // Update the alert item with the found token details
-                    const alertItem = document.getElementById(`alert-${alertIndex}`);
-                    if (alertItem) {
-                        console.log("key : ", tokenPublicKey);
-                        console.log(tokenPublicKey ? tokenPublicKey : 'does not exist');
-
-                        alertItem.innerHTML = `
-                            <span>${symbolElement.innerText.trim()}</span>
-                            ${tokenPublicKey ? tokenPublicKey : 'does not exist'}
-                             <button class="copy-btn" data-text="${tokenPublicKey != '' ? tokenPublicKey : symbolElement.innerText.trim()}">Copy📋</button>
-                            <button class="delete-alert-btn" data-index="${alertIndex}">Delete 🗑️</button>
-                        `;
-                        alertItem.classList.add('red-striped'); // Change style to red-striped
-
-                        // Attach event listener for copy functionality
-                        const copyBtn = alertItem.querySelector('.copy-btn');
-                        copyBtn.addEventListener('click', (event) => {
-                            const textToCopy = event.target.getAttribute('data-text');
-                            copyToClipboard(textToCopy);
-                            showNotification(`${textToCopy} Copied to clipboard`, 'done');
-                        });
-
-                        showNotification(`Token "${symbol}" has been launched!`);
-                        tokenFound = true;
-                    }
-                }
+    // Load saved alerts from chrome.storage.sync
+    function loadAlertsFromStorage() {
+        chrome.storage.sync.get({ alerts: [] }, function(result) {
+            const alerts = result.alerts;
+            alerts.forEach(alert => {
+                alertIndex = alert.alertIndex; // Keep track of latest index
+                const alertList = document.getElementById('alert-list');
+                const alertItem = document.createElement('div');
+                alertItem.className = 'alert-item'; // Default style
+                alertItem.id = `alert-${alert.alertIndex}`;
+                alertItem.dataset.symbol = alert.symbol;
+                alertItem.innerHTML = `
+                    <span>${alert.symbol}</span>
+                    <button class="delete-alert-btn" data-index="${alert.alertIndex}">Delete</button>
+                `;
+                alertList.appendChild(alertItem);
+                startAlertChecking(alert.symbol, alert.alertIndex);
             });
-            if (tokenFound) {
-                clearInterval(intervalId);
-            }
-        }, checkInterval);
+        });
     }
+
+    function removeAlertFromStorage(index) {
+        chrome.storage.sync.get({ alerts: [] }, function(result) {
+            const updatedAlerts = result.alerts.filter(alert => alert.alertIndex !== parseInt(index));
+            chrome.storage.sync.set({ alerts: updatedAlerts }, function() {
+                console.log(`Alert with index ${index} removed from storage`);
+            });
+        });
+    }
+// Map to store interval IDs for each alert
+const alertIntervals = {};
+
+function startAlertChecking(symbol, alertIndex) {
+    const checkInterval = 3000; // 3 seconds
+    const intervalId = setInterval(() => {
+        console.log('looking for token ...', symbol);
+        const rows = document.querySelectorAll('a.ds-dex-table-row');
+        let tokenFound = false;
+        rows.forEach(row => {
+            const symbolElement = row.querySelector('.ds-dex-table-row-base-token-symbol');
+            const publicKeyElement = row.querySelector('.ds-dex-table-row-token-icon');
+            let tokenPublicKey = '';
+            if (symbolElement && symbolElement.innerText.trim().toLowerCase().includes(symbol.toLowerCase())) {
+                if (publicKeyElement) {
+                    const publicKeyArray = publicKeyElement?.src?.trim()?.split("/");
+                    tokenPublicKey = publicKeyArray[publicKeyArray.length - 1].split('.')[0];
+                }
+
+                // Update the alert item with the found token details
+                const alertItem = document.getElementById(`alert-${alertIndex}`);
+                if (alertItem) {
+                    alertItem.innerHTML = `
+                        <span>${symbolElement.innerText.trim()}</span>
+                        ${tokenPublicKey ? tokenPublicKey : 'does not exist'}
+                         <button class="copy-btn" data-text="${tokenPublicKey !== '' ? tokenPublicKey : symbolElement.innerText.trim()}">Copy📋</button>
+                        <button class="delete-alert-btn" data-index="${alertIndex}">Delete 🗑️</button>
+                        <br>
+                    `;
+                    alertItem.classList.add('red-striped'); // Change style to red-striped
+
+                    // Attach event listener for copy functionality
+                    const copyBtn = alertItem.querySelector('.copy-btn');
+                    copyBtn.addEventListener('click', (event) => {
+                        const textToCopy = event.target.getAttribute('data-text');
+                        copyToClipboard(textToCopy);
+                        showNotification(`${textToCopy} Copied to clipboard`, 'done');
+                    });
+
+                    showNotification(`Token "${symbol}" has been launched!`);
+                    tokenFound = true;
+                }
+            }
+        });
+        if (tokenFound) {
+            clearInterval(intervalId);
+        }
+    }, checkInterval);
+
+    // Store the intervalId for this alertIndex
+    alertIntervals[alertIndex] = intervalId;
+}
+
 
     // Call function to create the floating button when the page loads
     createFloatingButton();
