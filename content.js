@@ -1,0 +1,284 @@
+window.addEventListener('load', () => {
+    console.log("DexScreener content script loaded.");
+
+    function createFloatingButton() {
+        const filterButton = document.createElement("button");
+        filterButton.id = "advanced-filter-float-btn";
+        filterButton.innerText = "DexScreener Advanced";
+        filterButton.style.position = "fixed";
+        filterButton.style.right = "-70px";
+        filterButton.style.top = "50%";
+        filterButton.style.transform = "translateY(-50%) rotate(90deg)";
+        filterButton.style.zIndex = "1000";
+        filterButton.style.backgroundColor = "var(--chakra-colors-accent-600)";
+        filterButton.style.color = "#fff";
+        filterButton.style.border = "none";
+        filterButton.style.borderRadius = "5px";
+        filterButton.style.cursor = "pointer";
+        filterButton.style.padding = "10px";
+        filterButton.style.whiteSpace = "nowrap";
+
+        document.body.appendChild(filterButton);
+
+        createModal();
+
+        filterButton.addEventListener("click", function() {
+            document.getElementById('filter-modal').style.display = 'block';
+        });
+    }
+
+    function createModal() {
+        fetch(chrome.runtime.getURL('assets/html/modal.html'))
+        .then(response => response.text())
+        .then(html => {
+            document.body.insertAdjacentHTML('beforeend', html); // Insert the modal into the page
+            
+            document.querySelector('.close-btn').addEventListener("click", function() {
+                document.getElementById('filter-modal').style.display = 'none';
+            });
+
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.addEventListener('click', function() {
+                    const tab = this.dataset.tab;
+                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
+                    this.classList.add('active');
+                    document.getElementById(`${tab}-tab-content`).style.display = 'block';
+                });
+            });
+
+            document.getElementById('apply-filter').addEventListener('click', applyFilter);
+            document.getElementById('clear-filter').addEventListener('click', clearFilter);
+            document.getElementById('create-alert').addEventListener('click', createAlert);
+            
+            document.getElementById('alert-list').addEventListener('click', function(event) {
+                if (event.target.classList.contains('delete-alert-btn')) {
+                    deleteAlert(event.target.dataset.index);
+                }
+            });
+
+            // Add functionality to close the modal when clicking outside of the content
+            document.getElementById('filter-modal').addEventListener('click', function(event) {
+                if (event.target === this) {
+                    this.style.display = 'none';
+                }
+            });
+
+            // Add event listeners to input fields to trigger filter application on Enter key press
+            document.getElementById('token-symbol').addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    document.getElementById('apply-filter').click();
+                }
+            });
+
+            document.getElementById('token-public-key').addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    document.getElementById('apply-filter').click();
+                }
+            });
+
+        })
+        .catch(error => {
+            console.error('Error loading modal:', error);
+            alert("Failed to load the modal content. Please refresh the page.");
+        });
+    }
+
+    let alertIndex = 0;
+
+    function applyFilter() {
+        const symbol = document.getElementById('token-symbol').value || null;
+        const publicKey = document.getElementById('token-public-key').value || null;
+
+        if (symbol || publicKey) {
+            displayFilteredResults({
+                tokenSymbol: symbol,
+                tokenPublicKey: publicKey
+            });
+        }
+    }
+
+    function clearFilter() {
+        document.getElementById('token-symbol').value = '';
+        document.getElementById('token-public-key').value = '';
+        document.getElementById('filtered-results').innerHTML = '';
+    }
+    function saveAlertToLocalStorage(alert) {
+        let alerts = JSON.parse(localStorage.getItem('alerts')) || [];
+        alerts.push(alert);
+        localStorage.setItem('alerts', JSON.stringify(alerts));
+    }
+    
+    function createAlert() {
+        const symbol = document.getElementById('alert-symbol').value;
+        if (symbol) {
+            const alertList = document.getElementById('alert-list');
+            alertIndex++;
+            const alertItem = document.createElement('div');
+            alertItem.className = 'alert-item'; // Default style
+            alertItem.id = `alert-${alertIndex}`;
+            alertItem.dataset.symbol = symbol;
+            alertItem.innerHTML = `
+                <span>${symbol}</span>
+                <button class="delete-alert-btn" data-index="${alertIndex}">Delete</button>
+            `;
+            alertList.appendChild(alertItem);
+            document.getElementById('alert-symbol').value = ''; // Clear input after adding alert
+            // Start checking for the alert token every 3 seconds
+            
+            //setting localstrage alerts
+            saveAlertToLocalStorage({ "sym": symbol })
+            startAlertChecking(symbol, alertIndex);
+        }
+    }
+
+    function deleteAlert(index) {
+        const alertList = document.getElementById('alert-list');
+        const alertItem = document.getElementById(`alert-${index}`);
+        if (alertItem) {
+            alertItem.remove();
+        }
+    }
+
+    function displayFilteredResults(filterCriteria) {
+        const rows = document.querySelectorAll('a.ds-dex-table-row');
+        const resultsContainer = document.getElementById("filtered-results");
+        resultsContainer.innerHTML = ''; // Clear previous results
+
+        filterCriteria.tokenPublicKey = filterCriteria?.tokenPublicKey?.trim() || null;
+        filterCriteria.tokenSymbol = filterCriteria?.tokenSymbol?.trim() || null;
+
+        // Array to hold clones of filtered rows
+        let filteredRows = [];
+        const data = [];
+        rows.forEach(row => {
+            const symbolElement = row.querySelector('.ds-dex-table-row-base-token-symbol');
+            const publicKeyElement = row.querySelector('.ds-dex-table-row-token-icon');
+            const href = row.href; // Get the href attribute of the link
+            const name = row.querySelector(".ds-dex-table-row-base-token-name"); // Get the name attribute of the link
+            const age = row.querySelector(".ds-dex-table-row-col-pair-age");
+            const liquidityandmKap = row.querySelectorAll('.ds-table-data-cell');
+
+            if (!symbolElement && !publicKeyElement) {
+                // Skip if elements are missing
+                return;
+            }
+
+            if (!data.some(x => x.publicKey === publicKeyElement?.src?.trim())) {
+                let publicKeyArray = publicKeyElement ? publicKeyElement?.src?.trim()?.split("/") : [];
+
+                data.push({
+                    publicKey : publicKeyArray.length > 0 ? (publicKeyArray[publicKeyArray.length -1]).split('.')[0] : "",
+                    symbol: symbolElement?.innerText?.trim()?.toLowerCase(),
+                    href: href,
+                    name: name.textContent,
+                    age: age.textContent,
+                    liquidity: liquidityandmKap[0].textContent,
+                    mKap: liquidityandmKap[1].textContent
+                });
+            }
+        });
+        filteredRows = data.filter(x => x.publicKey === filterCriteria?.tokenPublicKey || x.symbol.toLowerCase().includes(filterCriteria?.tokenSymbol?.toLowerCase()));
+        console.log("result found : ", filteredRows);
+        
+        // Generate HTML for each filtered result
+        filteredRows.forEach(result => {
+            const resultElement = document.createElement('div');
+            resultElement.innerHTML = `
+                <strong>Token Address:</strong> ${result.publicKey}<br>
+                <a href="${result.href}" target= "_blank" class="filtered-result-item">
+                <strong>Token Symbol:</strong> ${result.symbol}<br>
+                <strong>Token Name:</strong> ${result.name}<br>
+                <strong>Token Age(since search):</strong> ${result.age}<br>
+                <strong>Token Liquidity:</strong> ${result.liquidity}<br>
+                <strong>Token Market Cap:</strong> ${result.mKap}
+                </a>`;
+            resultsContainer.appendChild(resultElement);
+        });
+
+        // Display the modal if it’s not already visible
+        document.getElementById('filter-modal').style.display = 'block';
+    }
+    
+    function showNotification(message, audio = "notification") {
+        const notificationArea = document.getElementById('notification-area');
+        const notificationText = document.getElementById('notification-text');
+        const notificationSound = new Audio(chrome.runtime.getURL(`assets/audio/${audio}.wav`));
+
+        notificationText.textContent = message;
+        notificationArea.style.display = 'block';
+        notificationArea.classList.add('show');
+        notificationSound.play();
+        setTimeout(() => {
+            notificationArea.style.display = 'none';
+            notificationArea.classList.remove('show');
+        }, 5000); // Hide notification after 5 seconds
+    }
+    function copyToClipboard(text) {
+        const tempInput = document.createElement('input');
+        tempInput.style.position = 'absolute';
+        tempInput.style.left = '-1000px';
+        tempInput.value = text;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
+    }
+    
+    function startAlertChecking(symbol, alertIndex) {
+        const checkInterval = 3000; // 3 seconds
+        const intervalId = setInterval(() => {
+            console.log('looking for token ...', symbol);
+            const rows = document.querySelectorAll('a.ds-dex-table-row');
+            let tokenFound = false;
+            rows.forEach(row => {
+                const symbolElement = row.querySelector('.ds-dex-table-row-base-token-symbol');
+                const publicKeyElement = row.querySelector('.ds-dex-table-row-token-icon');
+                const nameElement = row.querySelector(".ds-dex-table-row-base-token-name");
+                const href = row.href; // Get the href attribute of the link
+                const age = row.querySelector(".ds-dex-table-row-col-pair-age");
+                let tokenPublicKey = '';
+                if (symbolElement  && symbolElement.innerText.trim().toLowerCase().includes(symbol.toLowerCase())) {
+                    if(publicKeyElement) {
+                        const publicKeyArray = publicKeyElement?.src?.trim()?.split("/");
+                        tokenPublicKey = publicKeyArray[publicKeyArray.length -1].split('.')[0];    
+                    }
+
+                    // Update the alert item with the found token details
+                    const alertItem = document.getElementById(`alert-${alertIndex}`);
+                    if (alertItem) {
+                        console.log("key : ", tokenPublicKey);
+                        console.log(tokenPublicKey ? tokenPublicKey : 'does not exist');
+
+                        alertItem.innerHTML = `
+                            <span>${symbolElement.innerText.trim()}</span>
+                            ${tokenPublicKey ? tokenPublicKey : 'does not exist'}
+                             <button class="copy-btn" data-text="${tokenPublicKey != '' ? tokenPublicKey : symbolElement.innerText.trim()}">Copy📋</button>
+                            <button class="delete-alert-btn" data-index="${alertIndex}">Delete 🗑️</button>
+                        `;
+                        alertItem.classList.add('red-striped'); // Change style to red-striped
+
+                        // Attach event listener for copy functionality
+                        const copyBtn = alertItem.querySelector('.copy-btn');
+                        copyBtn.addEventListener('click', (event) => {
+                            const textToCopy = event.target.getAttribute('data-text');
+                            copyToClipboard(textToCopy);
+                            showNotification(`${textToCopy} Copied to clipboard`, 'done');
+                        });
+
+                        showNotification(`Token "${symbol}" has been launched!`);
+                        tokenFound = true;
+                    }
+                }
+            });
+            if (tokenFound) {
+                clearInterval(intervalId);
+            }
+        }, checkInterval);
+    }
+
+    // Call function to create the floating button when the page loads
+    createFloatingButton();
+});

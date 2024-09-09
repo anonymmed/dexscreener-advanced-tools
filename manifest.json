@@ -1,0 +1,40 @@
+{
+    "manifest_version": 3,
+    "name": "DexScreener Advanced Filter",
+    "version": "1.0",
+    "description": "Adds an advanced filter option to DexScreener.com for filtering tokens by age.",
+    "permissions": [
+        "storage",
+        "activeTab",
+        "scripting"
+      ],  
+    "content_scripts": [
+      {
+        "matches": ["https://dexscreener.com/*"],
+        "js": ["content.js"],
+        "run_at": "document_idle"
+      }
+    ],
+      "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/html/modal.html",
+        "assets/audio/notification.wav",
+        "assets/audio/done.wav"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+    "host_permissions": [
+      "https://dexscreener.com/*"
+    ],
+    "icons": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  }
+  
